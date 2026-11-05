@@ -49,6 +49,73 @@ p {
     font-size: 0.9rem;
 }
 
+#soundScene {
+    position: relative;
+    width: min(100%, 28rem);
+    aspect-ratio: 1;
+    overflow: hidden;
+    border: 2px solid #9ca3af;
+    border-radius: 0.5rem;
+    background:
+        linear-gradient(#e5e7eb 1px, transparent 1px),
+        linear-gradient(90deg, #e5e7eb 1px, transparent 1px),
+        #ffffff;
+    background-size: 25% 25%;
+    cursor: crosshair;
+    touch-action: none;
+}
+
+.listener,
+.source {
+    position: absolute;
+    z-index: 1;
+    transform: translate(-50%, -50%);
+}
+
+.listener {
+    left: 50%;
+    top: 50%;
+    width: 1rem;
+    height: 1rem;
+    border: 3px solid #ffffff;
+    border-radius: 50%;
+    background: #2563eb;
+    box-shadow: 0 0 0 2px #1d4ed8;
+    pointer-events: none;
+}
+
+.source {
+    z-index: 2;
+    padding: 0.3rem 0.45rem;
+    border-radius: 0.3rem;
+    color: #ffffff;
+    background: #374151;
+    font-size: 0.7rem;
+    font-weight: 700;
+    white-space: nowrap;
+    pointer-events: none;
+}
+
+.source-top {
+    left: 50%;
+    top: 0;
+}
+
+.source-right {
+    left: 100%;
+    top: 50%;
+}
+
+.source-bottom {
+    left: 50%;
+    top: 100%;
+}
+
+.source-left {
+    left: 0;
+    top: 50%;
+}
+
 #meters {
     display: grid;
     gap: 0.6rem;

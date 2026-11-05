@@ -11,10 +11,10 @@
         </select>
         <p id="loadingStatus">Connecting to the audio server...</p>
         <button id="playButton" disabled>Play Sound</button>
-        <label for="distanceControl">Distance from listener:</label>
-        <input type="range" id="distanceControl" min="1" max="20" step="0.1" value="5" />
-        <label for="angleControl">Angle around listener:</label>
-        <input type="range" id="angleControl" min="-90" max="90" step="1" value="0" />
+        <p>Move the listener inside the square to change distance, angle and volume.</p>
+        <div id="soundScene" aria-label="Sound positioning area" tabindex="0">
+            <div class="listener" aria-label="Listener"></div>
+        </div>
         <section id="meters" aria-label="Track volume meters"></section>
 
         <script>
@@ -24,23 +24,23 @@
             const audioSelect = document.getElementById("audioSelect");
             const playButton = document.getElementById("playButton");
             const loadingStatus = document.getElementById("loadingStatus");
-            const distanceControl = document.getElementById("distanceControl");
-            const angleControl = document.getElementById("angleControl");
-            const pannerNode = audioContext.createPanner();
-            const stereoPannerNode = audioContext.createStereoPanner();
-
-            pannerNode.panningModel = "HRTF";
-            pannerNode.distanceModel = "inverse";
-            pannerNode.refDistance = 1;
-            pannerNode.maxDistance = 20;
-            pannerNode.rolloffFactor = 1;
-            pannerNode.connect(stereoPannerNode).connect(audioContext.destination);
+            const soundScene = document.getElementById("soundScene");
+            const listenerMarker = soundScene.querySelector(".listener");
 
             let accessToken;
             let audioFiles = [];
             let audioBuffers = [];
             let activeSources = [];
             let analysers = [];
+            let spatialNodes = [];
+            let listenerPosition = { x: 0, z: 0 };
+            const sourceCaptureRadius = 0.2;
+            const sourcePositions = [
+                { x: 0, z: -1, edge: "top" },
+                { x: 1, z: 0, edge: "right" },
+                { x: 0, z: 1, edge: "bottom" },
+                { x: -1, z: 0, edge: "left" },
+            ];
 
             function createMeters(trackFiles) {
                 const meters = document.getElementById("meters");
@@ -59,6 +59,32 @@
                         return container;
                     }),
                 );
+            }
+
+            function createSourceMarkers(trackFiles) {
+                soundScene.querySelectorAll(".source").forEach((source) => source.remove());
+                trackFiles.forEach((file, index) => {
+                    const marker = document.createElement("div");
+                    marker.className = `source source-${sourcePositions[index].edge}`;
+                    marker.textContent = file.filename;
+                    soundScene.append(marker);
+                });
+            }
+
+            function createSpatialNodes(trackCount) {
+                spatialNodes = Array.from({ length: trackCount }, () => {
+                    const panner = audioContext.createPanner();
+                    const gain = audioContext.createGain();
+
+                    panner.panningModel = "HRTF";
+                    panner.distanceModel = "linear";
+                    panner.refDistance = 1;
+                    panner.maxDistance = 20;
+                    panner.rolloffFactor = 1;
+                    panner.connect(gain).connect(audioContext.destination);
+                    return { panner, gain };
+                });
+                updateSpatialAudio();
             }
 
             function drawMeters() {
@@ -100,22 +126,72 @@
                 window.requestAnimationFrame(drawMeters);
             }
 
-            function updateSourcePosition() {
-                const distance = Number(distanceControl.value);
-                const angle = (Number(angleControl.value) * Math.PI) / 180;
-                const x = Math.sin(angle) * distance;
-                const z = -Math.cos(angle) * distance;
-                const stereoPan = Math.max(-1, Math.min(1, Math.sin(angle)));
+            function updateSpatialAudio() {
+                const distances = sourcePositions.map((source) =>
+                    Math.hypot(
+                        source.x - listenerPosition.x,
+                        source.z - listenerPosition.z,
+                    ),
+                );
+                const closestDistance = Math.min(...distances);
+                const closestSource = distances.indexOf(closestDistance);
 
-                if (pannerNode.positionX) {
-                    pannerNode.positionX.value = x;
-                    pannerNode.positionY.value = 0;
-                    pannerNode.positionZ.value = z;
-                } else {
-                    pannerNode.setPosition(x, 0, z);
-                }
-                stereoPannerNode.pan.value = stereoPan;
+                spatialNodes.forEach(({ panner, gain }, index) => {
+                    const source = sourcePositions[index];
+                    const x = source.x - listenerPosition.x;
+                    const z = source.z - listenerPosition.z;
+                    const distance = distances[index];
+
+                    if (panner.positionX) {
+                        panner.positionX.value = x * 10;
+                        panner.positionY.value = 0;
+                        panner.positionZ.value = z * 10;
+                    } else {
+                        panner.setPosition(x * 10, 0, z * 10);
+                    }
+
+                    if (closestDistance <= sourceCaptureRadius) {
+                        gain.gain.value = index === closestSource ? 1 : 0;
+                    } else {
+                        gain.gain.value = 1 / (1 + distance * 1.8);
+                    }
+                });
             }
+
+            function moveListener(clientX, clientY) {
+                const bounds = soundScene.getBoundingClientRect();
+                const x = Math.max(0, Math.min(1, (clientX - bounds.left) / bounds.width));
+                const z = Math.max(0, Math.min(1, (clientY - bounds.top) / bounds.height));
+
+                listenerPosition = { x: x * 2 - 1, z: z * 2 - 1 };
+                listenerMarker.style.left = `${x * 100}%`;
+                listenerMarker.style.top = `${z * 100}%`;
+                updateSpatialAudio();
+            }
+
+            soundScene.addEventListener("pointerdown", (event) => {
+                soundScene.setPointerCapture(event.pointerId);
+                moveListener(event.clientX, event.clientY);
+            });
+
+            soundScene.addEventListener("pointermove", (event) => {
+                if (soundScene.hasPointerCapture(event.pointerId)) {
+                    moveListener(event.clientX, event.clientY);
+                }
+            });
+
+            soundScene.addEventListener("keydown", (event) => {
+                const step = 0.1;
+                if (event.key === "ArrowLeft") listenerPosition.x -= step;
+                if (event.key === "ArrowRight") listenerPosition.x += step;
+                if (event.key === "ArrowUp") listenerPosition.z -= step;
+                if (event.key === "ArrowDown") listenerPosition.z += step;
+                listenerPosition.x = Math.max(-1, Math.min(1, listenerPosition.x));
+                listenerPosition.z = Math.max(-1, Math.min(1, listenerPosition.z));
+                listenerMarker.style.left = `${((listenerPosition.x + 1) / 2) * 100}%`;
+                listenerMarker.style.top = `${((listenerPosition.z + 1) / 2) * 100}%`;
+                updateSpatialAudio();
+            });
 
             playButton.addEventListener("click", async () => {
                 if (audioBuffers.length === 0) {
@@ -132,7 +208,7 @@
                     source.buffer = buffer;
                     analyser.fftSize = 256;
                     analyser.smoothingTimeConstant = 0.8;
-                    source.connect(analyser).connect(pannerNode);
+                    source.connect(analyser).connect(spatialNodes[index].panner);
                     source.start();
                     analysers[index] = {
                         analyser,
@@ -142,11 +218,8 @@
                     };
                     return source;
                 });
+                updateSpatialAudio();
             });
-
-            distanceControl.addEventListener("input", updateSourcePosition);
-            angleControl.addEventListener("input", updateSourcePosition);
-            updateSourcePosition();
 
             async function getAccessToken() {
                 const response = await fetch(`${API_BASE_URL}/api/token`);
@@ -195,9 +268,9 @@
 
             async function loadSelectedAudio() {
                 const selectedArtist = audioSelect.value;
-                const selectedFiles = audioFiles.filter(
-                    (file) => file.artist === selectedArtist,
-                );
+                const selectedFiles = audioFiles
+                    .filter((file) => file.artist === selectedArtist)
+                    .slice(0, sourcePositions.length);
                 loadingStatus.textContent = "Loading all music tracks...";
                 playButton.disabled = true;
                 audioBuffers = [];
@@ -220,6 +293,8 @@
                     );
 
                     createMeters(selectedFiles);
+                    createSourceMarkers(selectedFiles);
+                    createSpatialNodes(audioBuffers.length);
                     analysers = [];
                     playButton.disabled = false;
                     loadingStatus.textContent = `${audioBuffers.length} tracks ready.`;
