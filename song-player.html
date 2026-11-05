@@ -1,13 +1,49 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-<title>Play and Control Sound (Web Audio API)</title>
-</head>
-<body>
-<label for="fileInput">Choose a music file:</label>
-<input type="file" id="fileInput" accept="audio/*">
-<button id="playButton" disabled>Play Sound</button>
-<script>
-const audioContext = new (window.AudioContext || window.webkitAudioContext)();</script>
-</body>
+    <head>
+        <title>Play and Control Sound (Web Audio API)</title>
+    </head>
+    <body>
+        <label for="fileInput">Choose a music file:</label>
+        <input type="file" id="fileInput" accept="audio/*" />
+        <button id="playButton" disabled>Play Sound</button>
+        <script>
+            const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const playButton = document.getElementById("playButton");
+
+            function loadAudio(input) {
+                const fileInput = document.getElementById(input);
+                fileInput.addEventListener("change", async () => {
+                    // get file name
+                    const file = fileInput.files[0];
+                    if (!file) return;
+                    // get audio buffer
+                    const arrayBuffer = await file.arrayBuffer();
+                    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    // may enable playback
+                    if (audioBuffer) {
+                        playButton.disabled = false;
+                    }
+                });
+            }
+            function musicDownload() {
+                loadAudio("fileInput");
+            }
+
+            playButton.addEventListener("click", () => {
+                if (audioBuffer) {
+                    // Create an AudioBufferSourceNode to play the sound...
+                    const source = audioContext.createBufferSource();
+                    // Setup the buffer of the source
+                    source.buffer = audioBuffer;
+                    // Connect the source to something...
+                    source.connect(audioContext.destination);
+                    // Start playing the sound source
+                    source.start();
+                } else {
+                    console.log("No audio file loaded yet!");
+                }
+            });
+        </script>
+    </body>
 </html>
