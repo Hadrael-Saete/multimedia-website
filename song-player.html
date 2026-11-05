@@ -5,18 +5,24 @@
         <link rel="stylesheet" href="song-player.css" />
     </head>
     <body>
-        <label for="fileInput">Choose a music file:</label>
-        <input type="file" id="fileInput" accept="audio/*" />
+        <label for="audioSelect">Choose a server audio file:</label>
+        <select id="audioSelect" disabled>
+            <option>Loading available files...</option>
+        </select>
+        <p id="loadingStatus">Connecting to the audio server...</p>
         <button id="playButton" disabled>Play Sound</button>
         <label for="volumeControl">Volume Control:</label>
         <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1" />
         <label for="panControl">Panning Control:</label>
-        <input type="range" id="panControl" min="-1" max="1" step="0.01" value="0">
+        <input type="range" id="panControl" min="-1" max="1" step="0.01" value="0" />
 
         <script>
+            const API_BASE_URL =
+                "https://ns-csuire01-rockband-static.labs.iut-larochelle.fr";
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-            const fileInput = document.getElementById("fileInput");
+            const audioSelect = document.getElementById("audioSelect");
             const playButton = document.getElementById("playButton");
+            const loadingStatus = document.getElementById("loadingStatus");
             const volumeControl = document.getElementById('volumeControl');
             const gainNode = audioContext.createGain();
             const panNode = audioContext.createStereoPanner();
@@ -25,28 +31,7 @@
             gainNode.connect(panNode).connect(audioContext.destination);
 
             let audioBuffer;
-
-            gainNode.connect(audioContext.destination);
-
-            fileInput.addEventListener("change", async () => {
-                const file = fileInput.files[0];
-
-                if (!file) {
-                    audioBuffer = undefined;
-                    playButton.disabled = true;
-                    return;
-                }
-
-                try {
-                    const arrayBuffer = await file.arrayBuffer();
-                    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                    playButton.disabled = false;
-                } catch (error) {
-                    audioBuffer = undefined;
-                    playButton.disabled = true;
-                    console.error("Unable to decode the selected audio file.", error);
-                }
-            });
+            let accessToken;
 
             playButton.addEventListener("click", async () => {
                 if (!audioBuffer) {
@@ -67,8 +52,91 @@
 
             panControl.addEventListener('input', (e) => {
                 // Adjust the pan value (-1 = left, 1 = right)
-                panNode.pan.value = e.target.value;
+                panNode.pan.value = Number(e.target.value);
             });
+
+            async function getAccessToken() {
+                const response = await fetch(`${API_BASE_URL}/api/token`);
+                if (!response.ok) {
+                    throw new Error(`Token request failed: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (!data.success || !data.token) {
+                    throw new Error("The audio server returned an invalid token.");
+                }
+
+                return data.token;
+            }
+
+            async function loadAudioFiles() {
+                const response = await fetch(
+                    `${API_BASE_URL}/api/files?token=${encodeURIComponent(accessToken)}`,
+                );
+                if (!response.ok) {
+                    throw new Error(`File list request failed: ${response.status}`);
+                }
+
+                const data = await response.json();
+                if (!data.success || !Array.isArray(data.files)) {
+                    throw new Error("The audio server returned an invalid file list.");
+                }
+
+                const audioFiles = data.files.filter((file) => file.category === "audio");
+
+                if (audioFiles.length === 0) {
+                    throw new Error("No audio files are available on the server.");
+                }
+
+                audioSelect.replaceChildren(
+                    ...audioFiles.map((file) => {
+                        const option = document.createElement("option");
+                        option.value = file.path;
+                        option.textContent = `${file.artist} - ${file.filename}`;
+                        return option;
+                    }),
+                );
+                audioSelect.disabled = false;
+            }
+
+            async function loadSelectedAudio() {
+                const audioPath = audioSelect.value;
+                loadingStatus.textContent = "Loading selected audio...";
+                playButton.disabled = true;
+
+                try {
+                    const response = await fetch(
+                        `${API_BASE_URL}/assets/${audioPath}?token=${encodeURIComponent(accessToken)}`,
+                    );
+                    if (!response.ok) {
+                        throw new Error(`Audio request failed: ${response.status}`);
+                    }
+
+                    const arrayBuffer = await response.arrayBuffer();
+                    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    playButton.disabled = false;
+                    loadingStatus.textContent = "Audio ready.";
+                } catch (error) {
+                    audioBuffer = undefined;
+                    loadingStatus.textContent = "Unable to load the selected audio.";
+                    console.error("Unable to load audio from the server.", error);
+                }
+            }
+
+            audioSelect.addEventListener("change", loadSelectedAudio);
+
+            async function initializeAudioLibrary() {
+                try {
+                    accessToken = await getAccessToken();
+                    await loadAudioFiles();
+                    await loadSelectedAudio();
+                } catch (error) {
+                    loadingStatus.textContent = "Unable to connect to the audio server.";
+                    console.error("Unable to initialize the audio library.", error);
+                }
+            }
+
+            initializeAudioLibrary();
         </script>
     </body>
 </html>
