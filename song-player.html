@@ -9,62 +9,54 @@
         <input type="file" id="fileInput" accept="audio/*" />
         <button id="playButton" disabled>Play Sound</button>
         <label for="volumeControl">Volume Control:</label>
-        <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1">
+        <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1" />
 
         <script>
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+            const fileInput = document.getElementById("fileInput");
             const playButton = document.getElementById("playButton");
-            const gainNode = audioContext.createGain();
-            gainNode.gain.value = 1;
             const volumeControl = document.getElementById('volumeControl');
-            let audioBuffer = null;
+            const gainNode = audioContext.createGain();
+
+            let audioBuffer;
+
             gainNode.connect(audioContext.destination);
 
-            function loadAudio(input) {
-                const fileInput = document.getElementById(input);
-                fileInput.addEventListener("change", async () => {
-                    // get file name
-                    const file = fileInput.files[0];
-                    if (!file) return;
-                    // get audio buffer
+            fileInput.addEventListener("change", async () => {
+                const file = fileInput.files[0];
+
+                if (!file) {
+                    audioBuffer = undefined;
+                    playButton.disabled = true;
+                    return;
+                }
+
+                try {
                     const arrayBuffer = await file.arrayBuffer();
-                    try {
-                        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                        playButton.disabled = false;
-                    } catch (error) {
-                        audioBuffer = null;
-                        playButton.disabled = true;
-                        console.error("Unable to decode the selected audio file.", error);
-                    }
-                });
-            }
-            function musicDownload() {
-                loadAudio("fileInput");
-            }
-
-            musicDownload();
-
-            playButton.addEventListener("click", async () => {
-                if (audioBuffer) {
-                    if (audioContext.state === "suspended") {
-                        await audioContext.resume();
-                    }
-                    // Create an AudioBufferSourceNode to play the sound...
-                    const source = audioContext.createBufferSource();
-                    // Setup the buffer of the source
-                    source.buffer = audioBuffer;
-                    // Route the source through the gain node before output.
-                    source.connect(gainNode);
-                    // Start playing the sound source
-                    source.start();
-                } else {
-                    console.log("No audio file loaded yet!");
+                    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                    playButton.disabled = false;
+                } catch (error) {
+                    audioBuffer = undefined;
+                    playButton.disabled = true;
+                    console.error("Unable to decode the selected audio file.", error);
                 }
             });
 
-            volumeControl.addEventListener('input', (e) => {
-                // Adjust the gain based on slider value
-                gainNode.gain.value = Number(e.target.value);
+            playButton.addEventListener("click", async () => {
+                if (!audioBuffer) {
+                    return;
+                }
+
+                await audioContext.resume();
+
+                const source = audioContext.createBufferSource();
+                source.buffer = audioBuffer;
+                source.connect(gainNode);
+                source.start();
+            });
+
+            volumeControl.addEventListener("input", () => {
+                gainNode.gain.value = Number(volumeControl.value);
             });
         </script>
     </body>
