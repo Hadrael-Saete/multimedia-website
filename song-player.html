@@ -5,16 +5,16 @@
         <link rel="stylesheet" href="song-player.css" />
     </head>
     <body>
-        <label for="audioSelect">Choose a server audio file:</label>
+        <label for="audioSelect">Choose a music:</label>
         <select id="audioSelect" disabled>
             <option>Loading available files...</option>
         </select>
         <p id="loadingStatus">Connecting to the audio server...</p>
         <button id="playButton" disabled>Play Sound</button>
-        <label for="volumeControl">Volume Control:</label>
-        <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1" />
-        <label for="panControl">Panning Control:</label>
-        <input type="range" id="panControl" min="-1" max="1" step="0.01" value="0" />
+        <label for="distanceControl">Distance from listener:</label>
+        <input type="range" id="distanceControl" min="1" max="20" step="0.1" value="5" />
+        <label for="angleControl">Angle around listener:</label>
+        <input type="range" id="angleControl" min="-180" max="180" step="1" value="0" />
 
         <script>
             const API_BASE_URL =
@@ -23,37 +23,57 @@
             const audioSelect = document.getElementById("audioSelect");
             const playButton = document.getElementById("playButton");
             const loadingStatus = document.getElementById("loadingStatus");
-            const volumeControl = document.getElementById('volumeControl');
-            const gainNode = audioContext.createGain();
-            const panNode = audioContext.createStereoPanner();
-            panNode.pan.value = 0;
-            const panControl = document.getElementById('panControl');
-            gainNode.connect(panNode).connect(audioContext.destination);
+            const distanceControl = document.getElementById("distanceControl");
+            const angleControl = document.getElementById("angleControl");
+            const pannerNode = audioContext.createPanner();
 
-            let audioBuffer;
+            pannerNode.panningModel = "HRTF";
+            pannerNode.distanceModel = "inverse";
+            pannerNode.refDistance = 1;
+            pannerNode.maxDistance = 20;
+            pannerNode.rolloffFactor = 1;
+            pannerNode.connect(audioContext.destination);
+
             let accessToken;
+            let audioFiles = [];
+            let audioBuffers = [];
+            let activeSources = [];
+
+            function updateSourcePosition() {
+                const distance = Number(distanceControl.value);
+                const angle = (Number(angleControl.value) * Math.PI) / 180;
+                const x = Math.sin(angle) * distance;
+                const z = -Math.cos(angle) * distance;
+
+                if (pannerNode.positionX) {
+                    pannerNode.positionX.value = x;
+                    pannerNode.positionY.value = 0;
+                    pannerNode.positionZ.value = z;
+                } else {
+                    pannerNode.setPosition(x, 0, z);
+                }
+            }
 
             playButton.addEventListener("click", async () => {
-                if (!audioBuffer) {
+                if (audioBuffers.length === 0) {
                     return;
                 }
 
                 await audioContext.resume();
 
-                const source = audioContext.createBufferSource();
-                source.buffer = audioBuffer;
-                source.connect(gainNode);
-                source.start();
+                activeSources.forEach((source) => source.stop());
+                activeSources = audioBuffers.map((buffer) => {
+                    const source = audioContext.createBufferSource();
+                    source.buffer = buffer;
+                    source.connect(pannerNode);
+                    source.start();
+                    return source;
+                });
             });
 
-            volumeControl.addEventListener("input", () => {
-                gainNode.gain.value = Number(volumeControl.value);
-            });
-
-            panControl.addEventListener('input', (e) => {
-                // Adjust the pan value (-1 = left, 1 = right)
-                panNode.pan.value = Number(e.target.value);
-            });
+            distanceControl.addEventListener("input", updateSourcePosition);
+            angleControl.addEventListener("input", updateSourcePosition);
+            updateSourcePosition();
 
             async function getAccessToken() {
                 const response = await fetch(`${API_BASE_URL}/api/token`);
@@ -82,17 +102,18 @@
                     throw new Error("The audio server returned an invalid file list.");
                 }
 
-                const audioFiles = data.files.filter((file) => file.category === "audio");
+                audioFiles = data.files.filter((file) => file.category === "audio");
 
                 if (audioFiles.length === 0) {
                     throw new Error("No audio files are available on the server.");
                 }
 
+                const artists = [...new Set(audioFiles.map((file) => file.artist))];
                 audioSelect.replaceChildren(
-                    ...audioFiles.map((file) => {
+                    ...artists.map((artist) => {
                         const option = document.createElement("option");
-                        option.value = file.path;
-                        option.textContent = `${file.artist} - ${file.filename}`;
+                        option.value = artist;
+                        option.textContent = artist;
                         return option;
                     }),
                 );
@@ -100,25 +121,36 @@
             }
 
             async function loadSelectedAudio() {
-                const audioPath = audioSelect.value;
-                loadingStatus.textContent = "Loading selected audio...";
+                const selectedArtist = audioSelect.value;
+                const selectedFiles = audioFiles.filter(
+                    (file) => file.artist === selectedArtist,
+                );
+                loadingStatus.textContent = "Loading all music tracks...";
                 playButton.disabled = true;
+                audioBuffers = [];
 
                 try {
-                    const response = await fetch(
-                        `${API_BASE_URL}/assets/${audioPath}?token=${encodeURIComponent(accessToken)}`,
-                    );
-                    if (!response.ok) {
-                        throw new Error(`Audio request failed: ${response.status}`);
-                    }
+                    audioBuffers = await Promise.all(
+                        selectedFiles.map(async (file) => {
+                            const response = await fetch(
+                                `${API_BASE_URL}/assets/${file.path}?token=${encodeURIComponent(accessToken)}`,
+                            );
+                            if (!response.ok) {
+                                throw new Error(
+                                    `Audio request failed for ${file.filename}: ${response.status}`,
+                                );
+                            }
 
-                    const arrayBuffer = await response.arrayBuffer();
-                    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+                            const arrayBuffer = await response.arrayBuffer();
+                            return audioContext.decodeAudioData(arrayBuffer);
+                        }),
+                    );
+
                     playButton.disabled = false;
-                    loadingStatus.textContent = "Audio ready.";
+                    loadingStatus.textContent = `${audioBuffers.length} tracks ready.`;
                 } catch (error) {
-                    audioBuffer = undefined;
-                    loadingStatus.textContent = "Unable to load the selected audio.";
+                    audioBuffers = [];
+                    loadingStatus.textContent = "Unable to load all music tracks.";
                     console.error("Unable to load audio from the server.", error);
                 }
             }
