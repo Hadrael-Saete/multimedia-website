@@ -11,6 +11,7 @@
         <script>
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const playButton = document.getElementById("playButton");
+            let audioBuffer = null;
 
             function loadAudio(input) {
                 const fileInput = document.getElementById(input);
@@ -20,10 +21,13 @@
                     if (!file) return;
                     // get audio buffer
                     const arrayBuffer = await file.arrayBuffer();
-                    audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
-                    // may enable playback
-                    if (audioBuffer) {
+                    try {
+                        audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
                         playButton.disabled = false;
+                    } catch (error) {
+                        audioBuffer = null;
+                        playButton.disabled = true;
+                        console.error("Unable to decode the selected audio file.", error);
                     }
                 });
             }
@@ -31,8 +35,13 @@
                 loadAudio("fileInput");
             }
 
+            musicDownload();
+
             playButton.addEventListener("click", () => {
                 if (audioBuffer) {
+                    if (audioContext.state === "suspended") {
+                        audioContext.resume();
+                    }
                     // Create an AudioBufferSourceNode to play the sound...
                     const source = audioContext.createBufferSource();
                     // Setup the buffer of the source
