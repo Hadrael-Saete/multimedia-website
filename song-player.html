@@ -8,10 +8,17 @@
         <label for="fileInput">Choose a music file:</label>
         <input type="file" id="fileInput" accept="audio/*" />
         <button id="playButton" disabled>Play Sound</button>
+        <label for="volumeControl">Volume Control:</label>
+        <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1">
+
         <script>
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
             const playButton = document.getElementById("playButton");
+            const gainNode = audioContext.createGain();
+            gainNode.gain.value = 1;
+            const volumeControl = document.getElementById('volumeControl');
             let audioBuffer = null;
+            gainNode.connect(audioContext.destination);
 
             function loadAudio(input) {
                 const fileInput = document.getElementById(input);
@@ -37,22 +44,27 @@
 
             musicDownload();
 
-            playButton.addEventListener("click", () => {
+            playButton.addEventListener("click", async () => {
                 if (audioBuffer) {
                     if (audioContext.state === "suspended") {
-                        audioContext.resume();
+                        await audioContext.resume();
                     }
                     // Create an AudioBufferSourceNode to play the sound...
                     const source = audioContext.createBufferSource();
                     // Setup the buffer of the source
                     source.buffer = audioBuffer;
-                    // Connect the source to something...
-                    source.connect(audioContext.destination);
+                    // Route the source through the gain node before output.
+                    source.connect(gainNode);
                     // Start playing the sound source
                     source.start();
                 } else {
                     console.log("No audio file loaded yet!");
                 }
+            });
+
+            volumeControl.addEventListener('input', (e) => {
+                // Adjust the gain based on slider value
+                gainNode.gain.value = Number(e.target.value);
             });
         </script>
     </body>
