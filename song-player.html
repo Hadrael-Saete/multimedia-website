@@ -14,7 +14,7 @@
         <label for="distanceControl">Distance from listener:</label>
         <input type="range" id="distanceControl" min="1" max="20" step="0.1" value="5" />
         <label for="angleControl">Angle around listener:</label>
-        <input type="range" id="angleControl" min="-180" max="180" step="1" value="0" />
+        <input type="range" id="angleControl" min="-90" max="90" step="1" value="0" />
         <section id="meters" aria-label="Track volume meters"></section>
 
         <script>
@@ -27,13 +27,14 @@
             const distanceControl = document.getElementById("distanceControl");
             const angleControl = document.getElementById("angleControl");
             const pannerNode = audioContext.createPanner();
+            const stereoPannerNode = audioContext.createStereoPanner();
 
             pannerNode.panningModel = "HRTF";
             pannerNode.distanceModel = "inverse";
             pannerNode.refDistance = 1;
             pannerNode.maxDistance = 20;
             pannerNode.rolloffFactor = 1;
-            pannerNode.connect(audioContext.destination);
+            pannerNode.connect(stereoPannerNode).connect(audioContext.destination);
 
             let accessToken;
             let audioFiles = [];
@@ -104,6 +105,7 @@
                 const angle = (Number(angleControl.value) * Math.PI) / 180;
                 const x = Math.sin(angle) * distance;
                 const z = -Math.cos(angle) * distance;
+                const stereoPan = Math.max(-1, Math.min(1, Math.sin(angle)));
 
                 if (pannerNode.positionX) {
                     pannerNode.positionX.value = x;
@@ -112,6 +114,7 @@
                 } else {
                     pannerNode.setPosition(x, 0, z);
                 }
+                stereoPannerNode.pan.value = stereoPan;
             }
 
             playButton.addEventListener("click", async () => {
