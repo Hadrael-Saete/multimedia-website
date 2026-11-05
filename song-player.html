@@ -10,6 +10,8 @@
         <button id="playButton" disabled>Play Sound</button>
         <label for="volumeControl">Volume Control:</label>
         <input type="range" id="volumeControl" min="0" max="1" step="0.01" value="1" />
+        <label for="panControl">Panning Control:</label>
+        <input type="range" id="panControl" min="-1" max="1" step="0.01" value="0">
 
         <script>
             const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -17,6 +19,9 @@
             const playButton = document.getElementById("playButton");
             const volumeControl = document.getElementById('volumeControl');
             const gainNode = audioContext.createGain();
+            const panNode = audioContext.createStereoPanner();
+            panNode.pan.value = 0;
+            const panControl = document.getElementById('panControl');
 
             let audioBuffer;
 
@@ -57,6 +62,11 @@
 
             volumeControl.addEventListener("input", () => {
                 gainNode.gain.value = Number(volumeControl.value);
+            });
+
+            panControl.addEventListener('input', (e) => {
+                // Adjust the pan value (-1 = left, 1 = right)
+                panNode.pan.value = e.target.value;
             });
         </script>
     </body>
