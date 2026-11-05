@@ -15,6 +15,7 @@
         <input type="range" id="distanceControl" min="1" max="20" step="0.1" value="5" />
         <label for="angleControl">Angle around listener:</label>
         <input type="range" id="angleControl" min="-180" max="180" step="1" value="0" />
+        <section id="meters" aria-label="Track volume meters"></section>
 
         <script>
             const API_BASE_URL =
@@ -38,6 +39,65 @@
             let audioFiles = [];
             let audioBuffers = [];
             let activeSources = [];
+            let analysers = [];
+
+            function createMeters(trackFiles) {
+                const meters = document.getElementById("meters");
+                meters.replaceChildren(
+                    ...trackFiles.map((file, index) => {
+                        const container = document.createElement("div");
+                        const label = document.createElement("span");
+                        const canvas = document.createElement("canvas");
+
+                        container.className = "meter";
+                        label.textContent = file.filename;
+                        canvas.width = 320;
+                        canvas.height = 64;
+                        canvas.dataset.trackIndex = index;
+                        container.append(label, canvas);
+                        return container;
+                    }),
+                );
+            }
+
+            function drawMeters() {
+                analysers.forEach(({ analyser, canvas }) => {
+                    const context = canvas.getContext("2d");
+                    const frequencies = new Uint8Array(analyser.frequencyBinCount);
+                    analyser.getByteFrequencyData(frequencies);
+
+                    const average = frequencies.reduce(
+                        (total, frequency) => total + frequency,
+                        0,
+                    ) / frequencies.length;
+                    const level = Math.min(1, average / 180);
+                    const width = canvas.width * level;
+                    const gradient = context.createLinearGradient(0, 0, canvas.width, 0);
+
+                    gradient.addColorStop(0, "#22c55e");
+                    gradient.addColorStop(0.65, "#eab308");
+                    gradient.addColorStop(0.85, "#f97316");
+                    gradient.addColorStop(1, "#dc2626");
+
+                    context.clearRect(0, 0, canvas.width, canvas.height);
+                    context.fillStyle = "#e5e7eb";
+                    context.fillRect(0, 0, canvas.width, canvas.height);
+                    context.fillStyle = gradient;
+                    context.fillRect(0, 0, Math.max(width, level > 0 ? 2 : 0), canvas.height);
+
+                    context.strokeStyle = "rgba(255, 255, 255, 0.7)";
+                    context.lineWidth = 1;
+                    for (let marker = 1; marker < 10; marker += 1) {
+                        const x = (canvas.width * marker) / 10;
+                        context.beginPath();
+                        context.moveTo(x, 0);
+                        context.lineTo(x, canvas.height);
+                        context.stroke();
+                    }
+                });
+
+                window.requestAnimationFrame(drawMeters);
+            }
 
             function updateSourcePosition() {
                 const distance = Number(distanceControl.value);
@@ -62,11 +122,21 @@
                 await audioContext.resume();
 
                 activeSources.forEach((source) => source.stop());
-                activeSources = audioBuffers.map((buffer) => {
+                activeSources = audioBuffers.map((buffer, index) => {
                     const source = audioContext.createBufferSource();
+                    const analyser = audioContext.createAnalyser();
+
                     source.buffer = buffer;
-                    source.connect(pannerNode);
+                    analyser.fftSize = 256;
+                    analyser.smoothingTimeConstant = 0.8;
+                    source.connect(analyser).connect(pannerNode);
                     source.start();
+                    analysers[index] = {
+                        analyser,
+                        canvas: document.querySelector(
+                            `canvas[data-track-index="${index}"]`,
+                        ),
+                    };
                     return source;
                 });
             });
@@ -146,6 +216,8 @@
                         }),
                     );
 
+                    createMeters(selectedFiles);
+                    analysers = [];
                     playButton.disabled = false;
                     loadingStatus.textContent = `${audioBuffers.length} tracks ready.`;
                 } catch (error) {
@@ -168,6 +240,7 @@
                 }
             }
 
+            drawMeters();
             initializeAudioLibrary();
         </script>
     </body>
